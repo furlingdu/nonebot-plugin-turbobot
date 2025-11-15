@@ -5,9 +5,9 @@ import httpx
 from nonebot import (
     on_command,
 )
-from nonebot.adapters.qq import (  # type: ignore
-    Message,
-    MessageEvent,
+from nonebot.adapters.onebot.v11 import (
+	Message,
+	MessageEvent,
 )
 from nonebot.params import CommandArg
 from nonebot.plugin import PluginMetadata
@@ -115,28 +115,43 @@ async def handle_bind(event: MessageEvent, arg: Message = CommandArg()):
 
 
 @unbind.handle()
-async def handle_unbind(event: MessageEvent):
+async def handle_unbind(event: MessageEvent, arg: Message = CommandArg()):
     """
     @Author: TurboServlet
     @Func: handle_unbind()
     @Description: 处理用户解绑操作
     @Param {MessageEvent} event: 消息事件
+    @Param {Message} arg: 命令参数，内容为要解绑的bot的QQ号
     """
     qqid = str(event.get_user_id())
+    
     if not is_already_bound(qqid):
         await unbind.send("您还未绑定bot，无法解绑！")
         return
-    bot_key = get_bot_key(qqid)
-    payload = {"botKey": bot_key}
+
+    bot_id = str(arg).strip()
+    if not bot_id:
+        await unbind.send("请提供要解绑的bot的QQ号。")
+        return
+
+    # 从数据库获取该用户绑定的bot_token
+    bot_token = get_bot_key(qqid)
+    if not bot_token:
+        await unbind.send("未找到绑定的bot_token，无法解绑。")
+        return
+
+    payload = {"token": bot_token, "botId": bot_id}
 
     try:
         async with httpx.AsyncClient() as client:
             response = await client.post(f'{plugin_config.api_base_url}/bot/unbind', json=payload)
 
         if response.status_code == 200:
+            # 解绑成功后删除绑定记录
             unbind_user(qqid)
-            await unbind.send("解绑成功！")
+            await unbind.send(f"解绑成功，bot {bot_id} 已解绑！")
         else:
+            print(response)
             await unbind.send(f"解绑失败，HTTP响应状态码为{response.status_code}。")
     except Exception as e:
         await unbind.send(f"解绑过程中出现错误：{e}")
